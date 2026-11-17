@@ -200,41 +200,71 @@ def gpu_info():
 
 
 def to_markdown(meta, conc_rows, prefill_rows):
-    L = []
-    L.append(f"Run: {meta['date']} UTC, model `{meta['model']}`, max_tokens={meta['max_tokens']}, "
-             f"temperature={meta['temperature']}, top_p={meta['top_p']}, thinking disabled, "
-             f"{meta['rounds']} request(s) per concurrent slot.")
-    L.append("")
-    L.append("### Decode throughput by concurrency")
-    L.append("")
-    L.append("Per-request = output tokens/s seen by one client after its first token. "
-             "Aggregate = total output tokens / wall time across all clients.")
-    L.append("")
-    L.append("| Workload | C | Per-request tok/s (mean) | Per-request min-max | Aggregate tok/s | TTFT p50 (s) | Avg output tokens |")
-    L.append("|---|---:|---:|---:|---:|---:|---:|")
-    for r in conc_rows:
-        L.append(f"| {r['workload']} | C{r['concurrency']} | {r['per_request_decode_tps_mean']:.1f} | "
-                 f"{r['per_request_decode_tps_min']:.1f}-{r['per_request_decode_tps_max']:.1f} | "
-                 f"{r['aggregate_output_tps']:.1f} | {r['ttft_median_s']:.3f} | {r['mean_completion_tokens']:.0f} |")
-    L.append("")
-    L.append("### Summary: per-request decode tok/s")
-    L.append("")
     concs = sorted({r["concurrency"] for r in conc_rows})
-    L.append("| Workload | " + " | ".join(f"C{c}" for c in concs) + " |")
-    L.append("|---|" + "---:|" * len(concs))
-    for w in WORKLOADS:
-        cells = []
-        for c in concs:
-            m = [r for r in conc_rows if r["workload"] == w and r["concurrency"] == c]
-            cells.append(f"{m[0]['per_request_decode_tps_mean']:.1f}" if m else "-")
-        L.append(f"| {w} | " + " | ".join(cells) + " |")
+    workloads = list(dict.fromkeys(r["workload"] for r in conc_rows))
+    by = {(r["workload"], r["concurrency"]): r for r in conc_rows}
+
+    def grid(title, note, fmt):
+        out = [f"### {title}", ""]
+        if note:
+            out += [note, ""]
+        out.append("| Workload | " + " | ".join(f"C{c}" for c in concs) + " |")
+        out.append("|---|" + "---:|" * len(concs))
+        for w in workloads:
+            cells = [fmt(by[(w, c)]) if (w, c) in by else "-" for c in concs]
+            out.append(f"| {w} | " + " | ".join(cells) + " |")
+        out.append("")
+        return out
+
+    def scale(r):
+        base = by.get((r["workload"], concs[0]))
+        return f"{r['aggregate_output_tps'] / base['aggregate_output_tps']:.2f}x" if base else "-"
+
+    def latency(r):
+        return (f"{(r['mean_completion_tokens'] - 1) / r['per_request_decode_tps_mean']"
+                f" + r['ttft_median_s']:.2f}")
+
+    total_req = sum(r["requests"] for r in conc_rows)
+    total_out = sum(r["requests"] * r["mean_completion_tokens"] for r in conc_rows)
+    L = ["## Run", ""]
+    L.append(f"- Finished: {meta['date']} UTC")
+    L.append(f"- Endpoint: `{meta['base_url']}`, served model `{meta['model']}`")
+    for g in meta.get("gpus") or []:
+        L.append(f"- GPU: {g}")
+    L.append(f"- Sampling: max_tokens={meta['max_tokens']}, temperature={meta['temperature']}, "
+             f"top_p={meta['top_p']}, thinking disabled, streaming")
+    L.append(f"- Load: closed loop with C concurrent clients, {meta['rounds']} request(s) per client; "
+             f"{total_req} decode requests and {total_out:.0f} output tokens in total")
+    if "prefill_reps" in meta:
+        L.append(f"- Prefill: median of {meta['prefill_reps']} single requests per length")
+    if "seed" in meta:
+        L.append(f"- Seed: {meta['seed']}")
     L.append("")
-    L.append("### Prefill speed (single request, no prefix-cache hits)")
+    L += grid("Aggregate output throughput (tok/s)",
+              "Total output tokens of all requests / wall time from the first request sent to the last one finished.",
+              lambda r: f"{r['aggregate_output_tps']:.1f}")
+    L += grid(f"Aggregate throughput vs C{concs[0]}", None, scale)
+    L += grid("TTFT p50 (s)", None, lambda r: f"{r['ttft_median_s']:.3f}")
+    L += grid("Request latency for the full output (s)",
+              "TTFT p50 + output tokens / mean per-request decode speed.", latency)
+    L += ["### Detail", "",
+          "Per-request decode = one request's output tokens / time after its first token.", "",
+          "| Workload | C | Requests | Output tokens | Wall (s) | Aggregate tok/s "
+          "| Per-request decode tok/s mean (min-max) | TTFT p50 (s) |",
+          "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in conc_rows:
+        L.append(f"| {r['workload']} | C{r['concurrency']} | {r['requests']} | "
+                 f"{r['requests'] * r['mean_completion_tokens']:.0f} | {r['wall_s']:.2f} | "
+                 f"{r['aggregate_output_tps']:.1f} | {r['per_request_decode_tps_mean']:.1f} "
+                 f"({r['per_request_decode_tps_min']:.1f}-{r['per_request_decode_tps_max']:.1f}) | "
+                 f"{r['ttft_median_s']:.3f} |")
     L.append("")
-    L.append("| Prompt tokens | TTFT p50 (s) | Prefill tok/s |")
-    L.append("|---:|---:|---:|")
+    L += ["### Prefill (single request, unique prompt, no prefix-cache hits)", "",
+          "| Target tokens | Prompt tokens | TTFT p50 (s) | Prefill tok/s | Reps |",
+          "|---:|---:|---:|---:|---:|"]
     for r in prefill_rows:
-        L.append(f"| {r['prompt_tokens']:.0f} | {r['ttft_median_s']:.3f} | {r['prefill_tps']:.0f} |")
+        L.append(f"| {r['target_tokens']} | {r['prompt_tokens']:.0f} | {r['ttft_median_s']:.3f} | "
+                 f"{r['prefill_tps']:.0f} | {r['reps']} |")
     L.append("")
     return "\n".join(L)
 
@@ -253,7 +283,18 @@ def main():
     p.add_argument("--prefill-reps", type=int, default=3)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--out", default="benchmarks/results/latest")
+    p.add_argument("--render", metavar="JSON",
+                   help="rebuild the .md report from an existing results .json and exit")
     args = p.parse_args()
+    if args.render:
+        with open(args.render) as f:
+            data = json.load(f)
+        out = args.render[:-5] if args.render.endswith(".json") else args.render
+        md = to_markdown(data["meta"], data["concurrency"], data["prefill"])
+        with open(out + ".md", "w") as f:
+            f.write(md)
+        print(md)
+        return
     rng = random.Random(args.seed)
 
     print("warmup...", flush=True)
@@ -265,8 +306,8 @@ def main():
         for name, prompt in WORKLOADS.items():
             r = run_concurrency(args, name, prompt, c)
             conc_rows.append(r)
-            print(f"{name:<9} C{c}: per-req {r['per_request_decode_tps_mean']:7.1f} tok/s  "
-                  f"agg {r['aggregate_output_tps']:7.1f} tok/s  ttft {r['ttft_median_s']:.3f}s", flush=True)
+            print(f"{name:<9} C{c}: agg {r['aggregate_output_tps']:7.1f} tok/s  "
+                  f"per-req {r['per_request_decode_tps_mean']:7.1f} tok/s  ttft {r['ttft_median_s']:.3f}s", flush=True)
 
     prefill_rows = run_prefill(args, rng)
 
@@ -278,6 +319,9 @@ def main():
         "temperature": args.temperature,
         "top_p": args.top_p,
         "rounds": args.rounds,
+        "concurrency": args.concurrency,
+        "prefill_reps": args.prefill_reps,
+        "seed": args.seed,
         "gpus": gpu_info(),
     }
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
