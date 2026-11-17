@@ -139,7 +139,7 @@ Derived as TTFT p50 + 1023 / mean per-request decode speed.
 |---|---:|---:|---:|---:|
 | Code | 3.22 | 3.99 | 5.40 | 7.37 |
 | Prose | 5.65 | 6.80 | 8.79 | 11.30 |
-| Counting | 2.75 | 3.19 | 4.01 | 5.15 |
+| Counting | 2.75 | 3.19 | 4.01 | 5.16 |
 
 ### Detail per cell
 
