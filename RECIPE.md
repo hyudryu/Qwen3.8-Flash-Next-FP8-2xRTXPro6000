@@ -131,9 +131,9 @@ The run finished at 2026-11-17 05:13 UTC (2026-11-16 local time). Raw data: [`be
 | Prose | 0.029 | 0.063 | 0.078 | 0.135 |
 | Counting | 0.028 | 0.046 | 0.071 | 0.164 |
 
-### Request latency for 1024 output tokens (s)
+### Approximate request latency for 1024 output tokens (s), not measured
 
-Derived as TTFT p50 + 1023 / mean per-request decode speed.
+This run predates per-request duration recording, so these values are estimates: TTFT p50 + 1023 / mean per-request decode speed. They are not the measured mean or median request latency, and they understate it when decode speeds differ between requests. `bench.py` now records each request's end-to-end duration and reports p50, mean and max request latency on future runs.
 
 | Workload | C1 | C2 | C4 | C8 |
 |---|---:|---:|---:|---:|

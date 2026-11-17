@@ -145,6 +145,10 @@ def run_concurrency(args, name, prompt, conc):
         "per_request_decode_tps_max": max(tps),
         "aggregate_output_tps": total_out / wall,
         "ttft_median_s": statistics.median(r["ttft_s"] for r in res),
+        # end-to-end duration of each request (send -> last token)
+        "e2e_median_s": statistics.median(r["e2e_s"] for r in res),
+        "e2e_mean_s": statistics.mean(r["e2e_s"] for r in res),
+        "e2e_max_s": max(r["e2e_s"] for r in res),
         "wall_s": wall,
     }
 
@@ -220,9 +224,11 @@ def to_markdown(meta, conc_rows, prefill_rows):
         base = by.get((r["workload"], concs[0]))
         return f"{r['aggregate_output_tps'] / base['aggregate_output_tps']:.2f}x" if base else "-"
 
-    def latency(r):
+    def approx_latency(r):
         secs = (r["mean_completion_tokens"] - 1) / r["per_request_decode_tps_mean"] + r["ttft_median_s"]
-        return f"{secs:.2f}"
+        return f"~{secs:.2f}"
+
+    has_e2e = all("e2e_median_s" in r for r in conc_rows)
 
     total_req = sum(r["requests"] for r in conc_rows)
     total_out = sum(r["requests"] * r["mean_completion_tokens"] for r in conc_rows)
@@ -245,8 +251,19 @@ def to_markdown(meta, conc_rows, prefill_rows):
               lambda r: f"{r['aggregate_output_tps']:.1f}")
     L += grid(f"Aggregate throughput vs C{concs[0]}", None, scale)
     L += grid("TTFT p50 (s)", None, lambda r: f"{r['ttft_median_s']:.3f}")
-    L += grid("Request latency for the full output (s)",
-              "TTFT p50 + output tokens / mean per-request decode speed.", latency)
+    if has_e2e:
+        L += grid("Request latency p50 (s)",
+                  "Median end-to-end duration of the individual requests (request sent to last token).",
+                  lambda r: f"{r['e2e_median_s']:.2f}")
+        L += grid("Request latency mean / max (s)",
+                  "Mean and maximum end-to-end duration of the individual requests.",
+                  lambda r: f"{r['e2e_mean_s']:.2f} / {r['e2e_max_s']:.2f}")
+    else:
+        L += grid("Approximate request latency (s), not measured",
+                  "These results predate per-request duration recording, so this is an estimate: "
+                  "TTFT p50 + (mean output tokens - 1) / mean per-request decode speed. "
+                  "It is not the mean or median request latency and understates it when "
+                  "decode speeds differ between requests.", approx_latency)
     L += ["### Detail", "",
           "Per-request decode = one request's output tokens / time after its first token.", "",
           "| Workload | C | Requests | Output tokens | Wall (s) | Aggregate tok/s "
@@ -307,7 +324,8 @@ def main():
             r = run_concurrency(args, name, prompt, c)
             conc_rows.append(r)
             print(f"{name:<9} C{c}: agg {r['aggregate_output_tps']:7.1f} tok/s  "
-                  f"per-req {r['per_request_decode_tps_mean']:7.1f} tok/s  ttft {r['ttft_median_s']:.3f}s", flush=True)
+                  f"per-req {r['per_request_decode_tps_mean']:7.1f} tok/s  ttft {r['ttft_median_s']:.3f}s  "
+                  f"e2e p50 {r['e2e_median_s']:.2f}s", flush=True)
 
     prefill_rows = run_prefill(args, rng)
 
