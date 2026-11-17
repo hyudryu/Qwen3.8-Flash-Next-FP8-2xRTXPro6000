@@ -172,9 +172,9 @@ Derived as TTFT p50 + 1023 / mean per-request decode speed.
 
 ## Observations
 
-- **Throughput scales well to C8.** Aggregate output rises 3.4-4.2x from C1 to C8. It has not flattened at C8, and `max-num-seqs` is 16, so C16 should give more throughput.
+- **Throughput scales well to C8.** Aggregate output rises 3.4-4.2x from C1 to C8. It has not flattened at C8. C16 (the `max-num-seqs` limit) was not measured.
 - **The workload matters more than concurrency at low C.** MTP acceptance follows how predictable the text is: Counting > Code > Prose. At C1, Prose decodes at about half the speed of Counting.
-- **Prose gains the most from batching relative to C1 among the free-text workloads (3.95x).** Low acceptance leaves more idle GPU time per step for the batch to use.
+- **Batching gains are similar across workloads.** C8 vs C1 is 3.42x for Code, 3.95x for Prose and 4.22x for Counting. Counting gains the most and still reaches the highest absolute throughput.
 - **TTFT stays low.** It is under 170 ms at C8 for short prompts. Long prompts are dominated by prefill time; see the prefill table.
 - **Prefill is flat from 4k to 128k** at 15.2-16.2k tok/s and falls only about 6% at 128k. At 1k tokens, fixed per-request overhead halves the apparent rate.
 - **At C1, aggregate is slightly below per-request speed** (317.5 vs 322.4 for Code). That is because aggregate also counts TTFT and the gap between back-to-back requests.

@@ -221,8 +221,8 @@ def to_markdown(meta, conc_rows, prefill_rows):
         return f"{r['aggregate_output_tps'] / base['aggregate_output_tps']:.2f}x" if base else "-"
 
     def latency(r):
-        return (f"{(r['mean_completion_tokens'] - 1) / r['per_request_decode_tps_mean']"
-                f" + r['ttft_median_s']:.2f}")
+        secs = (r["mean_completion_tokens"] - 1) / r["per_request_decode_tps_mean"] + r["ttft_median_s"]
+        return f"{secs:.2f}"
 
     total_req = sum(r["requests"] for r in conc_rows)
     total_out = sum(r["requests"] * r["mean_completion_tokens"] for r in conc_rows)
