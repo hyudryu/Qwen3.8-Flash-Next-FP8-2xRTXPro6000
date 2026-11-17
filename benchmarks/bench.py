@@ -51,6 +51,8 @@ WORDS = (
 
 def _conn(base, timeout):
     u = urllib.parse.urlparse(base)
+    if u.scheme == "https":
+        return http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=timeout)
     return http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
 
 
@@ -147,8 +149,13 @@ def run_concurrency(args, name, prompt, conc):
     }
 
 
+_NONCE_RNG = random.SystemRandom()  # independent of --seed: unique across runs
+
+
 def make_text(rng, n_words):
-    nonce = "".join(rng.choices(string.ascii_lowercase + string.digits, k=24))
+    # The nonce must not come from the seeded rng, otherwise reruns recreate
+    # identical prompts and can hit retained prefix-cache entries.
+    nonce = "".join(_NONCE_RNG.choices(string.ascii_lowercase + string.digits, k=24))
     return f"[{nonce}] " + " ".join(rng.choice(WORDS) for _ in range(n_words))
 
 

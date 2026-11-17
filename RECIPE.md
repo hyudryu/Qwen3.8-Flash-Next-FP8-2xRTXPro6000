@@ -46,7 +46,7 @@ Settings:
   - **Code**: an LRU cache module plus its tests
   - **Prose**: a long short story
   - **Counting**: count from 1 to 3000
-- Prefill: a single request with a random unique prefix, so the prefix cache never hits; median of 3 runs
+- Prefill: a single request with a random unique prefix, so the prefix cache never hits; median of 3 runs. The prefix nonce comes from the OS RNG, not `--seed`, so reruns never reuse cached prompts
 
 Raw data: [`benchmarks/results/2026-11-16.json`](benchmarks/results/2026-11-16.json) and [`.md`](benchmarks/results/2026-11-16.md).
 
